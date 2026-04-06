@@ -1,0 +1,140 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600&family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+@layer base {
+  :root {
+    --background: 222 30% 8%;
+    --foreground: 210 20% 92%;
+
+    --card: 222 25% 11%;
+    --card-foreground: 210 20% 92%;
+
+    --popover: 222 25% 11%;
+    --popover-foreground: 210 20% 92%;
+
+    --primary: 185 70% 50%;
+    --primary-foreground: 222 30% 8%;
+
+    --secondary: 222 20% 16%;
+    --secondary-foreground: 210 20% 85%;
+
+    --muted: 222 20% 14%;
+    --muted-foreground: 215 15% 55%;
+
+    --accent: 38 90% 55%;
+    --accent-foreground: 222 30% 8%;
+
+    --destructive: 0 72% 55%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 222 20% 18%;
+    --input: 222 20% 18%;
+    --ring: 185 70% 50%;
+
+    --radius: 0.75rem;
+
+    --neural: 185 70% 50%;
+    --neural-dim: 185 50% 25%;
+    --synapse: 260 60% 60%;
+    --engagement: 38 90% 55%;
+    --mastery: 150 60% 50%;
+    --attention: 340 70% 55%;
+    --cognitive-load: 220 60% 60%;
+
+    --gradient-neural: linear-gradient(135deg, hsl(185 70% 50%), hsl(260 60% 60%));
+    --gradient-engagement: linear-gradient(135deg, hsl(38 90% 55%), hsl(20 85% 50%));
+    --gradient-mastery: linear-gradient(135deg, hsl(150 60% 50%), hsl(185 70% 50%));
+    --gradient-card: linear-gradient(145deg, hsl(222 25% 13%), hsl(222 25% 9%));
+
+    --shadow-neural: 0 4px 30px -8px hsl(185 70% 50% / 0.2);
+    --shadow-card: 0 4px 20px -4px hsl(0 0% 0% / 0.4);
+
+    --font-mono: 'JetBrains Mono', monospace;
+    --font-sans: 'Inter', system-ui, sans-serif;
+
+    --sidebar-background: 222 25% 11%;
+    --sidebar-foreground: 210 20% 85%;
+    --sidebar-primary: 185 70% 50%;
+    --sidebar-primary-foreground: 222 30% 8%;
+    --sidebar-accent: 222 20% 16%;
+    --sidebar-accent-foreground: 210 20% 85%;
+    --sidebar-border: 222 20% 18%;
+    --sidebar-ring: 185 70% 50%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-sans);
+  }
+
+  code, .font-mono {
+    font-family: var(--font-mono);
+  }
+}
+
+@layer utilities {
+  .glow-neural {
+    box-shadow: 0 0 20px hsl(185 70% 50% / 0.15), 0 0 60px hsl(185 70% 50% / 0.05);
+  }
+
+  .glow-accent {
+    box-shadow: 0 0 20px hsl(38 90% 55% / 0.15), 0 0 60px hsl(38 90% 55% / 0.05);
+  }
+
+  .gradient-neural {
+    background: var(--gradient-neural);
+  }
+
+  .gradient-engagement {
+    background: var(--gradient-engagement);
+  }
+
+  .gradient-mastery {
+    background: var(--gradient-mastery);
+  }
+
+  .bg-card-gradient {
+    background: var(--gradient-card);
+  }
+
+  .text-neural {
+    color: hsl(var(--neural));
+  }
+
+  .text-engagement {
+    color: hsl(var(--engagement));
+  }
+
+  .text-mastery {
+    color: hsl(var(--mastery));
+  }
+
+  .text-attention {
+    color: hsl(var(--attention));
+  }
+
+  .text-cognitive {
+    color: hsl(var(--cognitive-load));
+  }
+
+  .text-synapse {
+    color: hsl(var(--synapse));
+  }
+
+  .border-neural {
+    border-color: hsl(var(--neural-dim));
+  }
+
+  .animate-pulse-slow {
+    animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+}
