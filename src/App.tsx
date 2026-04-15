@@ -19,6 +19,7 @@ import Profile from "./pages/Profile";
 import Onboarding from "./pages/Onboarding";
 import ManageCourses from "./pages/ManageCourses";
 import NotFound from "./pages/NotFound";
+import AdminDashboard from "./pages/AdminDashboard";
 
 const queryClient = new QueryClient();
 
@@ -44,6 +45,7 @@ const App = () => (
               <Route path="/leaderboard" element={<Leaderboard />} />
               <Route path="/profile" element={<Profile />} />
               <Route path="/manage" element={<ManageCourses />} />
+              <Route path="/admin" element={<AdminDashboard/>}  />
             </Route>
             <Route path="*" element={<NotFound />} />
           </Routes>

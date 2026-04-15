@@ -1,4 +1,4 @@
-import { Brain, LayoutDashboard, BookOpen, Network, BarChart3, MessageSquare, User, Trophy, Settings2 } from "lucide-react";
+import { Brain, LayoutDashboard, BookOpen, Network, BarChart3, MessageSquare, User, Trophy, Settings2, Shield } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useAuth } from "@/contexts/AuthContext";
 import {
@@ -21,7 +21,10 @@ const instructorNav = [
   { title: "Manage Content", url: "/manage", icon: Settings2 },
 ];
 
-const adminNav = [...instructorNav];
+const adminNav = [
+  ...instructorNav,
+  { title: "Admin Panel", url: "/admin", icon: Shield },
+];
 
 export function AppSidebar() {
   const { state } = useSidebar();

@@ -1,3 +1,5 @@
+// 
+
 import { createContext, useContext, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { User, Session } from "@supabase/supabase-js";
@@ -30,7 +32,7 @@ const AuthContext = createContext<AuthContextType>({
   session: null,
   profile: null,
   role: null,
-  loading: true,
+  loading: false,
   signOut: async () => {},
   refreshProfile: async () => {},
 });
@@ -44,49 +46,73 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [role, setRole] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+
+  // Prevent app freeze due to auth loading deadlock
+  const loading = false;
 
   const fetchProfileAndRole = async (userId: string) => {
     try {
-      const [profileRes, roleRes] = await Promise.all([
-        supabase.from("profiles").select("*").eq("id", userId).single(),
-        supabase.from("user_roles").select("role").eq("user_id", userId).single(),
-      ]);
-      if (profileRes.data) setProfile(profileRes.data as Profile);
-      if (roleRes.data) setRole(roleRes.data.role);
-    } catch (e) {
-      console.error("Error fetching profile/role:", e);
+      const { data: profileData } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", userId)
+        .maybeSingle();
+
+      const { data: roleData } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      setProfile((profileData as Profile) || null);
+      setRole(roleData?.role || "student");
+    } catch (error) {
+      console.error("Profile/role fetch failed:", error);
+      setProfile(null);
+      setRole("student");
     }
   };
 
   const refreshProfile = async () => {
-    if (user) await fetchProfileAndRole(user.id);
+    if (!user) return;
+    await fetchProfileAndRole(user.id);
   };
 
   useEffect(() => {
-    // Set up listener BEFORE getSession
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, newSession) => {
-        setSession(newSession);
-        setUser(newSession?.user ?? null);
+    const init = async () => {
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
 
-        if (newSession?.user) {
-          setTimeout(() => fetchProfileAndRole(newSession.user.id), 0);
+        setSession(session);
+        setUser(session?.user ?? null);
+
+        if (session?.user) {
+          fetchProfileAndRole(session.user.id);
         } else {
           setProfile(null);
           setRole(null);
         }
-        setLoading(false);
+      } catch (error) {
+        console.error("Auth init failed:", error);
       }
-    );
+    };
 
-    supabase.auth.getSession().then(({ data: { session: existingSession } }) => {
-      setSession(existingSession);
-      setUser(existingSession?.user ?? null);
-      if (existingSession?.user) {
-        fetchProfileAndRole(existingSession.user.id);
+    init();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      setUser(session?.user ?? null);
+
+      if (session?.user) {
+        fetchProfileAndRole(session.user.id);
+      } else {
+        setProfile(null);
+        setRole(null);
       }
-      setLoading(false);
     });
 
     return () => subscription.unsubscribe();
@@ -101,7 +127,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, session, profile, role, loading, signOut, refreshProfile }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        session,
+        profile,
+        role,
+        loading,
+        signOut,
+        refreshProfile,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );
