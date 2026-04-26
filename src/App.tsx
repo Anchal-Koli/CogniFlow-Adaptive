@@ -20,6 +20,9 @@ import Onboarding from "./pages/Onboarding";
 import ManageCourses from "./pages/ManageCourses";
 import NotFound from "./pages/NotFound";
 import AdminDashboard from "./pages/AdminDashboard";
+import Courses from "./pages/Courses";
+import CourseDetails from "./pages/CourseDetails";
+import QuizDetails from "./pages/QuizDetails";
 
 const queryClient = new QueryClient();
 
@@ -46,6 +49,9 @@ const App = () => (
               <Route path="/profile" element={<Profile />} />
               <Route path="/manage" element={<ManageCourses />} />
               <Route path="/admin" element={<AdminDashboard/>}  />
+              <Route path="/courses" element={<Courses/>}  />
+              <Route path="/courses/:id" element={<CourseDetails />} />
+              <Route path="/quizzes/:id" element={<QuizDetails />} />
             </Route>
             <Route path="*" element={<NotFound />} />
           </Routes>
