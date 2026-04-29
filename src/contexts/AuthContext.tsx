@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, useCallback } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { User, Session } from "@supabase/supabase-js";
 
@@ -48,71 +48,55 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [role, setRole] = useState<AppRole | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const resetAuthState = useCallback(() => {
-    setUser(null);
-    setSession(null);
-    setProfile(null);
-    setRole(null);
-  }, []);
-
-  const fetchProfileAndRole = useCallback(async (userId: string) => {
-    const [profileRes, roleRes] = await Promise.all([
-      supabase.from("profiles").select("*").eq("id", userId).maybeSingle(),
-      supabase.from("user_roles").select("role").eq("user_id", userId).maybeSingle(),
-    ]);
-
-    if (profileRes.error) {
-      console.error("Profile fetch failed:", profileRes.error);
-    }
-
-    if (roleRes.error) {
-      console.error("Role fetch failed:", roleRes.error);
-    }
-
-    setProfile((profileRes.data as Profile) || null);
-
-    // IMPORTANT:
-    // Only default to student if query succeeds and no explicit role exists.
-    // If query fails, keep role as null instead of lying.
-    if (!roleRes.error) {
-      setRole((roleRes.data?.role as AppRole | undefined) || "student");
-    } else {
-      setRole(null);
-    }
-  }, []);
-
-  const refreshProfile = useCallback(async () => {
-    if (!user) return;
-
-    setLoading(true);
+  const loadUserData = async (currentUser: User) => {
     try {
-      await fetchProfileAndRole(user.id);
-    } catch (error) {
-      console.error("Refresh profile failed:", error);
+      const { data: profileData, error: profileError } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", currentUser.id)
+        .maybeSingle();
+
+      if (profileError) {
+        console.error("Profile fetch failed:", profileError);
+        setProfile(null);
+      } else {
+        setProfile((profileData as Profile) || null);
+      }
+
+      const { data: roleData, error: roleError } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", currentUser.id)
+        .maybeSingle();
+
+      if (roleError) {
+        console.error("Role fetch failed:", roleError);
+        setRole("student");
+      } else {
+        setRole((roleData?.role as AppRole | undefined) || "student");
+      }
+    } catch (err) {
+      console.error("loadUserData failed:", err);
       setProfile(null);
-      setRole(null);
-    } finally {
-      setLoading(false);
+      setRole("student");
     }
-  }, [user, fetchProfileAndRole]);
+  };
+
+  const refreshProfile = async () => {
+    if (!user) return;
+    await loadUserData(user);
+  };
 
   useEffect(() => {
     let mounted = true;
 
-    const initializeAuth = async () => {
+    const init = async () => {
       try {
         setLoading(true);
 
         const {
           data: { session: currentSession },
-          error,
         } = await supabase.auth.getSession();
-
-        if (error) {
-          console.error("Get session failed:", error);
-          if (mounted) resetAuthState();
-          return;
-        }
 
         if (!mounted) return;
 
@@ -120,45 +104,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(currentSession?.user ?? null);
 
         if (currentSession?.user) {
-          await fetchProfileAndRole(currentSession.user.id);
+          await loadUserData(currentSession.user);
         } else {
           setProfile(null);
           setRole(null);
         }
-      } catch (error) {
-        console.error("Auth init failed:", error);
-        if (mounted) {
-          setProfile(null);
-          setRole(null);
-        }
+      } catch (err) {
+        console.error("Auth init failed:", err);
+        if (!mounted) return;
+        setProfile(null);
+        setRole(null);
       } finally {
-        if (mounted) {
-          setLoading(false);
-        }
+        if (mounted) setLoading(false);
       }
     };
 
-    initializeAuth();
+    init();
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, nextSession) => {
+    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       if (!mounted) return;
 
       setSession(nextSession);
       setUser(nextSession?.user ?? null);
 
       if (nextSession?.user) {
-        setLoading(true);
-        try {
-          await fetchProfileAndRole(nextSession.user.id);
-        } catch (error) {
-          console.error("Auth state profile/role fetch failed:", error);
-          setProfile(null);
-          setRole(null);
-        } finally {
-          if (mounted) setLoading(false);
-        }
+        // IMPORTANT: do NOT await here; avoid lock cascades
+        loadUserData(nextSession.user)
+          .catch((err) => console.error("Auth state loadUserData failed:", err))
+          .finally(() => {
+            if (mounted) setLoading(false);
+          });
       } else {
         setProfile(null);
         setRole(null);
@@ -170,18 +147,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, [fetchProfileAndRole, resetAuthState]);
+  }, []);
 
-  const signOut = useCallback(async () => {
+  const signOut = async () => {
     try {
       await supabase.auth.signOut();
-    } catch (error) {
-      console.error("Sign out failed:", error);
+    } catch (err) {
+      console.error("Sign out failed:", err);
     } finally {
-      resetAuthState();
+      setUser(null);
+      setSession(null);
+      setProfile(null);
+      setRole(null);
       setLoading(false);
     }
-  }, [resetAuthState]);
+  };
 
   return (
     <AuthContext.Provider
