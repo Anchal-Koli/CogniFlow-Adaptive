@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
@@ -14,7 +15,8 @@ import {
   Brain,
   BarChart3,
   Clock3,
-  Target,
+  Sparkles,
+  AlertTriangle,
 } from "lucide-react";
 
 interface CourseRow {
@@ -26,10 +28,24 @@ interface CourseRow {
   is_published: boolean;
 }
 
+interface QuizAttemptRow {
+  id: string;
+  score: number;
+  topic: string | null;
+  difficulty: string | null;
+  user_id: string;
+}
+
 const difficultyStyles: Record<string, string> = {
   easy: "text-mastery bg-mastery/10 border-mastery/20",
   medium: "text-accent bg-accent/10 border-accent/20",
   hard: "text-destructive bg-destructive/10 border-destructive/20",
+};
+
+const getRecommendedDifficulty = (score: number) => {
+  if (score < 50) return "easy";
+  if (score < 75) return "medium";
+  return "hard";
 };
 
 const Dashboard = () => {
@@ -52,7 +68,7 @@ const Dashboard = () => {
         .select("id, title, description, topic, difficulty, is_published")
         .eq("is_published", true)
         .order("created_at", { ascending: false })
-        .limit(4);
+        .limit(8);
 
       if (error) {
         console.error("DASHBOARD COURSES ERROR:", error);
@@ -63,6 +79,88 @@ const Dashboard = () => {
     },
     retry: 1,
   });
+
+  const {
+    data: attempts = [],
+    isLoading: attemptsLoading,
+  } = useQuery({
+    queryKey: ["dashboard-quiz-attempts"],
+    queryFn: async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) return [];
+
+      const { data, error } = await supabase
+        .from("quiz_attempts")
+        .select("id, score, topic, difficulty, user_id")
+        .eq("user_id", user.id)
+        .order("id", { ascending: false });
+
+      if (error) {
+        console.error("DASHBOARD ATTEMPTS ERROR:", error);
+        throw error;
+      }
+
+      return (data || []) as QuizAttemptRow[];
+    },
+    retry: 1,
+  });
+
+  const topicPerformance = useMemo(() => {
+    const map = new Map<string, { topic: string; totalScore: number; count: number }>();
+
+    attempts.forEach((attempt) => {
+      const topic = attempt.topic || "General";
+      const score = Number(attempt.score || 0);
+
+      if (!map.has(topic)) {
+        map.set(topic, { topic, totalScore: score, count: 1 });
+      } else {
+        const current = map.get(topic)!;
+        current.totalScore += score;
+        current.count += 1;
+      }
+    });
+
+    return Array.from(map.values())
+      .map((item) => ({
+        topic: item.topic,
+        avgScore: Math.round(item.totalScore / item.count),
+        attempts: item.count,
+      }))
+      .sort((a, b) => a.avgScore - b.avgScore);
+  }, [attempts]);
+
+  const weakestTopic = topicPerformance.length ? topicPerformance[0] : null;
+
+  const recommendedDifficulty = weakestTopic
+    ? getRecommendedDifficulty(weakestTopic.avgScore)
+    : "easy";
+
+  const recommendedCourse = useMemo(() => {
+    if (!courses.length) return null;
+
+    if (!weakestTopic) return courses[0] || null;
+
+    const exactMatch = courses.find(
+      (course) =>
+        (course.topic || "").toLowerCase() === (weakestTopic.topic || "").toLowerCase() &&
+        (course.difficulty || "").toLowerCase() === recommendedDifficulty
+    );
+
+    if (exactMatch) return exactMatch;
+
+    const topicMatch = courses.find(
+      (course) =>
+        (course.topic || "").toLowerCase() === (weakestTopic.topic || "").toLowerCase()
+    );
+
+    if (topicMatch) return topicMatch;
+
+    return courses[0] || null;
+  }, [courses, weakestTopic, recommendedDifficulty]);
 
   if (isLoading) return <PageLoader />;
 
@@ -78,7 +176,6 @@ const Dashboard = () => {
   }
 
   const { profile } = data;
-
   const firstName = profile?.name?.split(" ")[0] || "Learner";
 
   const quickActions = [
@@ -86,31 +183,30 @@ const Dashboard = () => {
       title: "Browse Courses",
       desc: "Explore all available learning paths",
       icon: GraduationCap,
-      path: "/courses",
+      path: "/app/courses",
     },
     {
       title: "Take Quiz",
       desc: "Test your understanding",
       icon: BookOpen,
-      path: "/quizzes",
+      path: "/app/quizzes",
     },
     {
       title: "AI Tutor",
       desc: "Ask doubts and get help instantly",
       icon: Brain,
-      path: "/tutor",
+      path: "/app/tutor",
     },
     {
       title: "Analytics",
       desc: "Track your performance and growth",
       icon: BarChart3,
-      path: "/analytics",
+      path: "/app/analytics",
     },
   ];
 
   return (
     <div className="space-y-6">
-      {/* Top Welcome */}
       <motion.div
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
@@ -160,7 +256,6 @@ const Dashboard = () => {
         </div>
       </motion.div>
 
-      {/* Quick Actions */}
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
@@ -186,9 +281,7 @@ const Dashboard = () => {
         ))}
       </motion.div>
 
-      {/* Main Grid */}
       <div className="grid grid-cols-1 xl:grid-cols-[1.5fr_0.9fr] gap-6">
-        {/* Left: Featured Courses */}
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -201,7 +294,7 @@ const Dashboard = () => {
             </div>
 
             <button
-              onClick={() => navigate("/courses")}
+              onClick={() => navigate("/app/courses")}
               className="text-xs text-primary hover:text-primary/80 font-medium"
             >
               View all
@@ -218,7 +311,7 @@ const Dashboard = () => {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {courses.map((course) => (
+              {courses.slice(0, 4).map((course) => (
                 <div
                   key={course.id}
                   className="rounded-xl border border-border bg-secondary/20 p-4 hover:border-primary/30 transition-all"
@@ -247,7 +340,7 @@ const Dashboard = () => {
                   </p>
 
                   <button
-                    onClick={() => navigate(`/courses/${course.id}`)}
+                    onClick={() => navigate(`/app/courses/${course.id}`)}
                     className="w-full flex items-center justify-center gap-2 py-2 rounded-lg bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 transition text-xs font-semibold"
                   >
                     Open Course
@@ -259,7 +352,6 @@ const Dashboard = () => {
           )}
         </motion.div>
 
-        {/* Right: Focus Panel */}
         <div className="space-y-6">
           <motion.div
             initial={{ opacity: 0 }}
@@ -268,33 +360,87 @@ const Dashboard = () => {
             className="bg-card-gradient border border-border rounded-2xl p-5"
           >
             <div className="flex items-center gap-2 mb-4">
-              <Target size={16} className="text-primary" />
-              <h3 className="text-sm font-semibold text-foreground">Today’s Focus</h3>
+              <Sparkles size={16} className="text-primary" />
+              <h3 className="text-sm font-semibold text-foreground">Recommended Next Step</h3>
             </div>
 
-            <div className="space-y-3">
-              <div className="rounded-xl border border-border bg-secondary/20 p-4">
-                <p className="text-xs text-muted-foreground mb-1">Primary Goal</p>
-                <p className="text-sm font-medium text-foreground">
-                  Continue one course and complete one focused session.
-                </p>
-              </div>
+            {attemptsLoading ? (
+              <p className="text-sm text-muted-foreground">Analyzing your quiz performance...</p>
+            ) : attempts.length === 0 ? (
+              <div className="space-y-3">
+                <div className="rounded-xl border border-border bg-secondary/20 p-4">
+                  <p className="text-xs text-muted-foreground mb-1">Status</p>
+                  <p className="text-sm font-medium text-foreground">
+                    No quiz attempts yet.
+                  </p>
+                </div>
 
-              <div className="rounded-xl border border-border bg-secondary/20 p-4">
-                <p className="text-xs text-muted-foreground mb-1">Best Practice</p>
-                <p className="text-sm font-medium text-foreground">
-                  Study first, then attempt quizzes for retention.
-                </p>
-              </div>
+                <div className="rounded-xl border border-primary/20 bg-primary/10 p-4">
+                  <p className="text-xs text-muted-foreground mb-1">Recommended Action</p>
+                  <p className="text-sm font-medium text-foreground">
+                    Start with an easy quiz to unlock personalized recommendations.
+                  </p>
+                </div>
 
-              <div className="rounded-xl border border-border bg-secondary/20 p-4">
-                <p className="text-xs text-muted-foreground mb-1">Recommended Duration</p>
-                <p className="text-sm font-medium text-foreground flex items-center gap-2">
-                  <Clock3 size={14} className="text-accent" />
-                  30–45 minutes focused session
-                </p>
+                <button
+                  onClick={() => navigate("/app/quizzes")}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-primary text-primary-foreground font-semibold hover:opacity-90 transition"
+                >
+                  Take First Quiz
+                  <ChevronRight size={14} />
+                </button>
               </div>
-            </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="rounded-xl border border-destructive/20 bg-destructive/10 p-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <AlertTriangle size={14} className="text-destructive" />
+                    <p className="text-xs text-muted-foreground">Focus Topic</p>
+                  </div>
+                  <p className="text-sm font-semibold text-foreground">
+                    {weakestTopic?.topic || "General"}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Average score: {weakestTopic?.avgScore ?? 0}%
+                  </p>
+                </div>
+
+                <div className="rounded-xl border border-accent/20 bg-accent/10 p-4">
+                  <p className="text-xs text-muted-foreground mb-1">Recommended Difficulty</p>
+                  <p className="text-sm font-semibold text-foreground capitalize">
+                    {recommendedDifficulty}
+                  </p>
+                </div>
+
+                {recommendedCourse ? (
+                  <div className="rounded-xl border border-primary/20 bg-primary/10 p-4">
+                    <p className="text-xs text-muted-foreground mb-1">Recommended Course</p>
+                    <p className="text-sm font-semibold text-foreground">
+                      {recommendedCourse.title}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {(recommendedCourse.topic || "General")} •{" "}
+                      {(recommendedCourse.difficulty || "standard").toLowerCase()}
+                    </p>
+
+                    <button
+                      onClick={() => navigate(`/app/courses/${recommendedCourse.id}`)}
+                      className="mt-3 w-full flex items-center justify-center gap-2 py-2 rounded-lg bg-primary text-primary-foreground hover:opacity-90 transition text-xs font-semibold"
+                    >
+                      Start Recommended Course
+                      <ChevronRight size={13} />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-border bg-secondary/20 p-4">
+                    <p className="text-xs text-muted-foreground mb-1">Recommended Course</p>
+                    <p className="text-sm font-medium text-foreground">
+                      No matching course found yet.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
           </motion.div>
 
           <motion.div
@@ -319,9 +465,9 @@ const Dashboard = () => {
                     className="h-full gradient-neural rounded-full"
                     style={{
                       width: `${
-profile.xpToNext
-  ? Math.min((profile.xp / profile.xpToNext) * 100, 100)
-  : 0
+                        profile.xpToNext
+                          ? Math.min((profile.xp / profile.xpToNext) * 100, 100)
+                          : 0
                       }%`,
                     }}
                   />
@@ -342,6 +488,16 @@ profile.xpToNext
                   </p>
                   <p className="text-lg font-bold text-mastery mt-1">{profile.skillRating}</p>
                 </div>
+              </div>
+
+              <div className="rounded-xl border border-border bg-secondary/20 p-4">
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">
+                  Recommended Session
+                </p>
+                <p className="text-sm font-medium text-foreground flex items-center gap-2">
+                  <Clock3 size={14} className="text-accent" />
+                  30–45 minutes focused session
+                </p>
               </div>
             </div>
           </motion.div>

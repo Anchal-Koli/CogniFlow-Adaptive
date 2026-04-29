@@ -66,7 +66,7 @@ const CourseDetails = () => {
     return (
       <div className="space-y-4">
         <button
-          onClick={() => navigate("/courses")}
+          onClick={() => navigate("/app/courses")}
           className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
         >
           <ArrowLeft size={14} />
@@ -90,23 +90,20 @@ const CourseDetails = () => {
 
   return (
     <div className="space-y-6">
-      {/* Back */}
       <button
-        onClick={() => navigate("/courses")}
+        onClick={() => navigate("/app/courses")}
         className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
       >
         <ArrowLeft size={14} />
         Back to Courses
       </button>
 
-      {/* Hero */}
       <motion.div
         initial={{ opacity: 0, y: 14 }}
         animate={{ opacity: 1, y: 0 }}
         className="bg-card-gradient border border-border rounded-2xl overflow-hidden"
       >
         <div className="grid lg:grid-cols-[1.4fr_0.9fr] gap-0">
-          {/* Left Content */}
           <div className="p-6 md:p-8">
             <div className="flex items-center gap-2 mb-3">
               <GraduationCap size={18} className="text-primary" />
@@ -167,7 +164,6 @@ const CourseDetails = () => {
             </div>
           </div>
 
-          {/* Right Visual */}
           <div className="border-t lg:border-t-0 lg:border-l border-border bg-secondary/20 min-h-[260px]">
             {course.image_url ? (
               <img
@@ -190,9 +186,7 @@ const CourseDetails = () => {
         </div>
       </motion.div>
 
-      {/* Main Content */}
       <div className="grid grid-cols-1 xl:grid-cols-[1.5fr_0.9fr] gap-6">
-        {/* Left Section */}
         <motion.div
           initial={{ opacity: 0, y: 14 }}
           animate={{ opacity: 1, y: 0 }}
@@ -275,7 +269,6 @@ const CourseDetails = () => {
           </div>
         </motion.div>
 
-        {/* Right Section */}
         <motion.div
           initial={{ opacity: 0, y: 14 }}
           animate={{ opacity: 1, y: 0 }}
@@ -325,7 +318,7 @@ const CourseDetails = () => {
 
           <button
             type="button"
-            onClick={() => navigate("/quizzes")}
+            onClick={() => navigate("/app/quizzes")}
             className="w-full py-3 rounded-xl bg-primary text-primary-foreground font-semibold hover:opacity-90 transition-all"
           >
             Go to Quizzes

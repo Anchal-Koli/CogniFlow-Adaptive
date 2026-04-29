@@ -1,8 +1,8 @@
-// 
-
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { User, Session } from "@supabase/supabase-js";
+
+type AppRole = "student" | "instructor" | "admin";
 
 interface Profile {
   id: string;
@@ -21,7 +21,7 @@ interface AuthContextType {
   user: User | null;
   session: Session | null;
   profile: Profile | null;
-  role: string | null;
+  role: AppRole | null;
   loading: boolean;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
@@ -32,7 +32,7 @@ const AuthContext = createContext<AuthContextType>({
   session: null,
   profile: null,
   role: null,
-  loading: false,
+  loading: true,
   signOut: async () => {},
   refreshProfile: async () => {},
 });
@@ -45,86 +45,143 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
-  const [role, setRole] = useState<string | null>(null);
+  const [role, setRole] = useState<AppRole | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  // Prevent app freeze due to auth loading deadlock
-  const loading = false;
+  const resetAuthState = useCallback(() => {
+    setUser(null);
+    setSession(null);
+    setProfile(null);
+    setRole(null);
+  }, []);
 
-  const fetchProfileAndRole = async (userId: string) => {
-    try {
-      const { data: profileData } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", userId)
-        .maybeSingle();
+  const fetchProfileAndRole = useCallback(async (userId: string) => {
+    const [profileRes, roleRes] = await Promise.all([
+      supabase.from("profiles").select("*").eq("id", userId).maybeSingle(),
+      supabase.from("user_roles").select("role").eq("user_id", userId).maybeSingle(),
+    ]);
 
-      const { data: roleData } = await supabase
-        .from("user_roles")
-        .select("role")
-        .eq("user_id", userId)
-        .maybeSingle();
-
-      setProfile((profileData as Profile) || null);
-      setRole(roleData?.role || "student");
-    } catch (error) {
-      console.error("Profile/role fetch failed:", error);
-      setProfile(null);
-      setRole("student");
+    if (profileRes.error) {
+      console.error("Profile fetch failed:", profileRes.error);
     }
-  };
 
-  const refreshProfile = async () => {
+    if (roleRes.error) {
+      console.error("Role fetch failed:", roleRes.error);
+    }
+
+    setProfile((profileRes.data as Profile) || null);
+
+    // IMPORTANT:
+    // Only default to student if query succeeds and no explicit role exists.
+    // If query fails, keep role as null instead of lying.
+    if (!roleRes.error) {
+      setRole((roleRes.data?.role as AppRole | undefined) || "student");
+    } else {
+      setRole(null);
+    }
+  }, []);
+
+  const refreshProfile = useCallback(async () => {
     if (!user) return;
-    await fetchProfileAndRole(user.id);
-  };
+
+    setLoading(true);
+    try {
+      await fetchProfileAndRole(user.id);
+    } catch (error) {
+      console.error("Refresh profile failed:", error);
+      setProfile(null);
+      setRole(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [user, fetchProfileAndRole]);
 
   useEffect(() => {
-    const init = async () => {
+    let mounted = true;
+
+    const initializeAuth = async () => {
       try {
+        setLoading(true);
+
         const {
-          data: { session },
+          data: { session: currentSession },
+          error,
         } = await supabase.auth.getSession();
 
-        setSession(session);
-        setUser(session?.user ?? null);
+        if (error) {
+          console.error("Get session failed:", error);
+          if (mounted) resetAuthState();
+          return;
+        }
 
-        if (session?.user) {
-          fetchProfileAndRole(session.user.id);
+        if (!mounted) return;
+
+        setSession(currentSession);
+        setUser(currentSession?.user ?? null);
+
+        if (currentSession?.user) {
+          await fetchProfileAndRole(currentSession.user.id);
         } else {
           setProfile(null);
           setRole(null);
         }
       } catch (error) {
         console.error("Auth init failed:", error);
+        if (mounted) {
+          setProfile(null);
+          setRole(null);
+        }
+      } finally {
+        if (mounted) {
+          setLoading(false);
+        }
       }
     };
 
-    init();
+    initializeAuth();
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      setUser(session?.user ?? null);
+    } = supabase.auth.onAuthStateChange(async (_event, nextSession) => {
+      if (!mounted) return;
 
-      if (session?.user) {
-        fetchProfileAndRole(session.user.id);
+      setSession(nextSession);
+      setUser(nextSession?.user ?? null);
+
+      if (nextSession?.user) {
+        setLoading(true);
+        try {
+          await fetchProfileAndRole(nextSession.user.id);
+        } catch (error) {
+          console.error("Auth state profile/role fetch failed:", error);
+          setProfile(null);
+          setRole(null);
+        } finally {
+          if (mounted) setLoading(false);
+        }
       } else {
         setProfile(null);
         setRole(null);
+        setLoading(false);
       }
     });
 
-    return () => subscription.unsubscribe();
-  }, []);
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, [fetchProfileAndRole, resetAuthState]);
 
-  const signOut = async () => {
-    await supabase.auth.signOut();
-    setUser(null);
-    setSession(null);
-    setProfile(null);
-    setRole(null);
-  };
+  const signOut = useCallback(async () => {
+    try {
+      await supabase.auth.signOut();
+    } catch (error) {
+      console.error("Sign out failed:", error);
+    } finally {
+      resetAuthState();
+      setLoading(false);
+    }
+  }, [resetAuthState]);
 
   return (
     <AuthContext.Provider
