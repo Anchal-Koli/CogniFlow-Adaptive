@@ -1,16 +1,20 @@
 import type { TopicNode, Quiz } from "@/data/dummy";
 
-// Weights for the scoring function
-const W_MASTERY = 0.55;    // prioritize low-mastery topics
-const W_DIFFICULTY = 0.30; // align quiz difficulty with student level
-const W_RECENCY = 0.15;    // favor less-attempted topics
+const W_MASTERY = 0.45;
+const W_DIFFICULTY = 0.2;
+const W_RECENCY = 0.1;
+const W_PREREQ = 0.25;
 
-// Difficulty numeric mapping
-const DIFFICULTY_MAP: Record<string, number> = { easy: 0.3, medium: 0.6, hard: 0.9 };
+const DIFFICULTY_MAP: Record<string, number> = {
+  easy: 0.3,
+  medium: 0.6,
+  hard: 0.9,
+};
 
-// Map student Elo rating to a normalized difficulty preference (0-1)
+const UNLOCK_THRESHOLD = 0.6;
+const REVIEW_THRESHOLD = 0.4;
+
 function ratingToDifficultyPref(rating: number): number {
-  // 400 → 0.1, 1200 → 0.5, 2000 → 0.9
   return Math.max(0.05, Math.min(0.95, (rating - 200) / 2000));
 }
 
@@ -21,10 +25,47 @@ export interface RecommendedItem {
   topicId: string;
   mastery: number;
   difficulty: string;
-  score: number;           // higher = more recommended
+  score: number;
   reason: string;
   estimatedTime: string;
   type: "quiz" | "review";
+  locked: boolean;
+  blockedBy: string[];
+  priority: "high" | "medium" | "low";
+}
+
+export interface TopicInsight {
+  topicId: string;
+  label: string;
+  mastery: number;
+  locked: boolean;
+  blockedBy: string[];
+  recommended: boolean;
+  priorityScore: number;
+  status: "weak" | "learning" | "strong";
+  nextAction: "review" | "practice" | "advance" | "locked";
+}
+
+function buildTopicMap(topicNodes: TopicNode[]) {
+  return new Map(topicNodes.map((t) => [t.id, t]));
+}
+
+function buildLabelMap(topicNodes: TopicNode[]) {
+  return new Map(topicNodes.map((t) => [t.label, t]));
+}
+
+function getBlockedPrereqs(topic: TopicNode, topicMap: Map<string, TopicNode>): string[] {
+  return (topic.prerequisites || []).filter((prereqId) => {
+    const prereq = topicMap.get(prereqId);
+    if (!prereq) return false;
+    return prereq.mastery < UNLOCK_THRESHOLD;
+  });
+}
+
+function getPriorityLabel(score: number): "high" | "medium" | "low" {
+  if (score >= 0.75) return "high";
+  if (score >= 0.5) return "medium";
+  return "low";
 }
 
 export function generateRecommendations(
@@ -34,40 +75,49 @@ export function generateRecommendations(
   maxItems = 6
 ): RecommendedItem[] {
   const diffPref = ratingToDifficultyPref(skillRating);
-
-  // Build a topic lookup
-  const topicMap = new Map(topicNodes.map((t) => [t.label, t]));
+  const topicMap = buildTopicMap(topicNodes);
+  const topicByLabel = buildLabelMap(topicNodes);
 
   const scored: RecommendedItem[] = quizzes.map((quiz) => {
-    const topicNode = topicMap.get(quiz.topic);
+    const topicNode = topicByLabel.get(quiz.topic);
     const mastery = topicNode?.mastery ?? 0.5;
     const attempts = topicNode?.quizAttempts ?? 0;
+    const blockedBy = topicNode ? getBlockedPrereqs(topicNode, topicMap) : [];
+    const locked = blockedBy.length > 0;
 
-    // Mastery score: lower mastery = higher priority (inverted)
     const masteryScore = 1 - mastery;
-
-    // Difficulty alignment: closer to preference = higher score
     const quizDiff = DIFFICULTY_MAP[quiz.difficulty] ?? 0.5;
     const diffScore = 1 - Math.abs(diffPref - quizDiff);
-
-    // Recency score: fewer attempts = higher priority
     const recencyScore = 1 / (1 + attempts * 0.3);
 
-    const totalScore =
+    // If prerequisites are satisfied => higher score
+    const prereqScore = locked ? 0 : 1;
+
+    let totalScore =
       W_MASTERY * masteryScore +
       W_DIFFICULTY * diffScore +
-      W_RECENCY * recencyScore;
+      W_RECENCY * recencyScore +
+      W_PREREQ * prereqScore;
 
-    // Generate human-readable reason
-    let reason: string;
-    if (mastery < 0.3) {
-      reason = `Low mastery (${Math.round(mastery * 100)}%) — needs attention`;
-    } else if (mastery < 0.5) {
-      reason = `Building foundations (${Math.round(mastery * 100)}% mastery)`;
+    // Penalize locked topics heavily
+    if (locked) {
+      totalScore *= 0.35;
+    }
+
+    let reason = "";
+    if (locked) {
+      const blockedLabels = blockedBy
+        .map((id) => topicMap.get(id)?.label || id)
+        .join(", ");
+      reason = `Locked until prerequisite mastery improves: ${blockedLabels}`;
+    } else if (mastery < 0.3) {
+      reason = `Critical weak area (${Math.round(mastery * 100)}%) — immediate review recommended`;
+    } else if (mastery < REVIEW_THRESHOLD) {
+      reason = `Foundation gap detected (${Math.round(mastery * 100)}% mastery)`;
     } else if (Math.abs(diffPref - quizDiff) < 0.15) {
-      reason = "Difficulty aligned with your skill level";
+      reason = "Best difficulty match for your current skill";
     } else {
-      reason = `Strengthen ${quiz.topic} (${Math.round(mastery * 100)}%)`;
+      reason = `Good next practice for ${quiz.topic} (${Math.round(mastery * 100)}% mastery)`;
     }
 
     return {
@@ -80,36 +130,80 @@ export function generateRecommendations(
       score: Math.round(totalScore * 1000) / 1000,
       reason,
       estimatedTime: `${quiz.timeLimit} min`,
-      type: mastery < 0.4 ? "review" : "quiz",
+      type: mastery < REVIEW_THRESHOLD ? "review" : "quiz",
+      locked,
+      blockedBy,
+      priority: getPriorityLabel(totalScore),
     };
   });
 
   return scored.sort((a, b) => b.score - a.score).slice(0, maxItems);
 }
 
-// Generate study plan items (top 3 actions for today)
-export interface StudyPlanItem {
-  topic: string;
-  time: string;
-  type: "review" | "quiz" | "new";
-  mastery: number;
-  reason: string;
-}
-
 export function generateStudyPlan(
   topicNodes: TopicNode[],
   quizzes: Quiz[],
   skillRating: number
-): StudyPlanItem[] {
+) {
   const recs = generateRecommendations(topicNodes, quizzes, skillRating, 3);
 
   return recs.map((r) => ({
-    topic: r.type === "review"
-      ? `Review ${r.topic}`
-      : `${r.quizTitle}`,
+    topic: r.type === "review" ? `Review ${r.topic}` : r.quizTitle,
     time: r.estimatedTime,
-    type: r.type === "review" ? "review" : (r.mastery < 0.2 ? "new" : "quiz"),
+    type: r.locked ? "review" : r.type === "review" ? "review" : (r.mastery < 0.2 ? "new" : "quiz"),
     mastery: r.mastery,
     reason: r.reason,
+    locked: r.locked,
+    blockedBy: r.blockedBy,
+    priority: r.priority,
   }));
+}
+
+export function generateTopicInsights(topicNodes: TopicNode[]): TopicInsight[] {
+  const topicMap = buildTopicMap(topicNodes);
+
+  const insights = topicNodes.map((topic) => {
+    const blockedBy = getBlockedPrereqs(topic, topicMap);
+    const locked = blockedBy.length > 0;
+
+    let priorityScore = 1 - topic.mastery;
+
+    // Bottleneck bonus: if many topics depend on this one, prioritize it
+    const dependents = topicNodes.filter((t) => t.prerequisites?.includes(topic.id)).length;
+    priorityScore += dependents * 0.08;
+
+    let status: TopicInsight["status"] = "learning";
+    if (topic.mastery < 0.35) status = "weak";
+    else if (topic.mastery >= 0.75) status = "strong";
+
+    let nextAction: TopicInsight["nextAction"] = "practice";
+    if (locked) nextAction = "locked";
+    else if (topic.mastery < 0.4) nextAction = "review";
+    else if (topic.mastery >= 0.75) nextAction = "advance";
+
+    return {
+      topicId: topic.id,
+      label: topic.label,
+      mastery: topic.mastery,
+      locked,
+      blockedBy,
+      recommended: false,
+      priorityScore: Math.round(priorityScore * 1000) / 1000,
+      status,
+      nextAction,
+    };
+  });
+
+  const sortedAvailable = [...insights]
+    .filter((i) => !i.locked)
+    .sort((a, b) => b.priorityScore - a.priorityScore);
+
+  const topRecommendedId = sortedAvailable[0]?.topicId;
+
+  return insights
+    .map((i) => ({
+      ...i,
+      recommended: i.topicId === topRecommendedId,
+    }))
+    .sort((a, b) => b.priorityScore - a.priorityScore);
 }

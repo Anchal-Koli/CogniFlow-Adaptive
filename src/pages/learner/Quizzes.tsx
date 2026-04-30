@@ -231,7 +231,7 @@ const Quizzes = () => {
                 </p>
 
                 <button
-                  onClick={() => navigate(`/quizzes/${quiz.id}`)}
+                  onClick={() => navigate(`/app/quizzes/${quiz.id}`)}
                   className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 transition text-xs font-semibold"
                 >
                   Start Quiz

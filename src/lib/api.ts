@@ -114,19 +114,40 @@ export async function fetchRatingHistory(): Promise<RatingHistoryEntry[]> {
 
 // ---------- Quizzes ----------
 
+// ---------- Quizzes ----------
+
+type RawQuizQuestion = {
+  id: string;
+  text: string;
+  options: string[];
+  correctAnswer?: number;
+  hint?: string;
+  explanation?: string;
+  difficulty?: string;
+};
+
 export async function fetchQuizzes(): Promise<Quiz[]> {
   const userId = await getUserId();
+
   const [quizzesRes, attemptsRes] = await Promise.all([
-    supabase.from("quizzes").select("*").eq("is_published", true),
+    supabase
+      .from("quizzes")
+      .select("id, title, topic, difficulty, time_limit, description, questions, is_published")
+      .eq("is_published", true),
     supabase.from("quiz_attempts").select("*").eq("user_id", userId),
   ]);
 
-  return (quizzesRes.data || []).map(q => {
-    const questions = (q.questions as any[]) || [];
-    const qAttempts = (attemptsRes.data || []).filter(a => a.quiz_id === q.id);
-    const bestScore = qAttempts.length > 0
-      ? Math.max(...qAttempts.map(a => Math.round((a.score / a.total) * 100)))
-      : null;
+  if (quizzesRes.error) throw quizzesRes.error;
+  if (attemptsRes.error) throw attemptsRes.error;
+
+  return (quizzesRes.data || []).map((q) => {
+    const questions = (q.questions as RawQuizQuestion[]) || [];
+    const qAttempts = (attemptsRes.data || []).filter((a) => a.quiz_id === q.id);
+
+    const bestScore =
+      qAttempts.length > 0
+        ? Math.max(...qAttempts.map((a) => Math.round((a.score / a.total) * 100)))
+        : null;
 
     return {
       id: q.id,
@@ -138,13 +159,15 @@ export async function fetchQuizzes(): Promise<Quiz[]> {
       attempts: qAttempts.length,
       bestScore,
       description: q.description,
-      questions: questions.map(qn => ({
+      // IMPORTANT:
+      // Learner should NOT receive correctAnswer / hint / explanation in list fetch
+      questions: questions.map((qn) => ({
         id: qn.id,
         text: qn.text,
         options: qn.options,
-        correctAnswer: qn.correctAnswer,
-        hint: qn.hint || "",
-        explanation: qn.explanation || "",
+        correctAnswer: -1,
+        hint: "",
+        explanation: "",
         difficulty: qn.difficulty || q.difficulty,
       })),
     };
@@ -152,8 +175,54 @@ export async function fetchQuizzes(): Promise<Quiz[]> {
 }
 
 export async function fetchQuizById(id: string): Promise<Quiz | undefined> {
-  const quizzes = await fetchQuizzes();
-  return quizzes.find(q => q.id === id);
+  const userId = await getUserId();
+
+  const [quizRes, attemptsRes] = await Promise.all([
+    supabase
+      .from("quizzes")
+      .select("id, title, topic, difficulty, time_limit, description, questions, is_published")
+      .eq("id", id)
+      .eq("is_published", true)
+      .maybeSingle(),
+    supabase.from("quiz_attempts").select("*").eq("user_id", userId).eq("quiz_id", id),
+  ]);
+
+  if (quizRes.error) throw quizRes.error;
+  if (attemptsRes.error) throw attemptsRes.error;
+
+  if (!quizRes.data) return undefined;
+
+  const q = quizRes.data;
+  const questions = (q.questions as RawQuizQuestion[]) || [];
+  const qAttempts = attemptsRes.data || [];
+
+  const bestScore =
+    qAttempts.length > 0
+      ? Math.max(...qAttempts.map((a) => Math.round((a.score / a.total) * 100)))
+      : null;
+
+  return {
+    id: q.id,
+    title: q.title,
+    topic: q.topic,
+    difficulty: q.difficulty as "easy" | "medium" | "hard",
+    questionCount: questions.length,
+    timeLimit: q.time_limit,
+    attempts: qAttempts.length,
+    bestScore,
+    description: q.description,
+    // IMPORTANT:
+    // Still hide answers before submission
+    questions: questions.map((qn) => ({
+      id: qn.id,
+      text: qn.text,
+      options: qn.options,
+      correctAnswer: -1,
+      hint: "",
+      explanation: "",
+      difficulty: qn.difficulty || q.difficulty,
+    })),
+  };
 }
 
 export async function submitQuizAttempt(attempt: {
@@ -165,18 +234,22 @@ export async function submitQuizAttempt(attempt: {
   date: string;
 }) {
   const userId = await getUserId();
-  const { data, error } = await supabase.from("quiz_attempts").insert({
-    user_id: userId,
-    quiz_id: attempt.quizId,
-    score: attempt.score,
-    total: attempt.total,
-    time_taken: attempt.timeTaken,
-    answers: attempt.answers,
-  }).select().single();
+
+  const { data, error } = await supabase
+    .from("quiz_attempts")
+    .insert({
+      user_id: userId,
+      quiz_id: attempt.quizId,
+      score: attempt.score,
+      total: attempt.total,
+      time_taken: attempt.timeTaken,
+      answers: attempt.answers,
+    })
+    .select()
+    .single();
 
   if (error) throw error;
 
-  // Process gamification server-side
   try {
     await supabase.functions.invoke("process-quiz-result", {
       body: { attemptId: data.id },
@@ -185,7 +258,6 @@ export async function submitQuizAttempt(attempt: {
     console.error("Failed to process quiz result:", e);
   }
 }
-
 // ---------- Topics / Knowledge Graph ----------
 
 export async function fetchTopicNodes(): Promise<TopicNode[]> {

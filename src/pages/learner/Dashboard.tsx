@@ -28,12 +28,18 @@ interface CourseRow {
   is_published: boolean;
 }
 
+interface QuizRow {
+  id: string;
+  topic: string | null;
+  difficulty: string | null;
+}
+
 interface QuizAttemptRow {
   id: string;
   score: number;
-  topic: string | null;
-  difficulty: string | null;
   user_id: string;
+  quiz_id: string;
+  quiz?: QuizRow | null;
 }
 
 const difficultyStyles: Record<string, string> = {
@@ -94,7 +100,17 @@ const Dashboard = () => {
 
       const { data, error } = await supabase
         .from("quiz_attempts")
-        .select("id, score, topic, difficulty, user_id")
+        .select(`
+          id,
+          score,
+          user_id,
+          quiz_id,
+          quiz:quizzes (
+            id,
+            topic,
+            difficulty
+          )
+        `)
         .eq("user_id", user.id)
         .order("id", { ascending: false });
 
@@ -112,7 +128,7 @@ const Dashboard = () => {
     const map = new Map<string, { topic: string; totalScore: number; count: number }>();
 
     attempts.forEach((attempt) => {
-      const topic = attempt.topic || "General";
+      const topic = attempt.quiz?.topic || "General";
       const score = Number(attempt.score || 0);
 
       if (!map.has(topic)) {
