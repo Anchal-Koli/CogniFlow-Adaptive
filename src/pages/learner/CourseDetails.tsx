@@ -43,20 +43,19 @@ const CourseDetails = () => {
     queryKey: ["course-details", id],
     enabled: !!id,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("courses")
-        .select("id, title, description, topic, difficulty, is_published, image_url")
-        .eq("id", id)
-        .eq("is_published", true)
-        .single();
+  const { data, error } = await supabase
+    .from("courses")
+    .select("id, title, description, topic, difficulty, is_published, image_url")
+    .eq("id", id)
+    .maybeSingle(); // ✅ IMPORTANT CHANGE
 
-      if (error) {
-        console.error("COURSE DETAILS ERROR:", error);
-        throw error;
-      }
+  if (error) {
+    console.error("COURSE DETAILS ERROR:", error);
+    throw error;
+  }
 
-      return data as CourseRow;
-    },
+  return data as CourseRow | null;
+},
     retry: 1,
   });
 
@@ -318,7 +317,7 @@ const CourseDetails = () => {
 
           <button
             type="button"
-            onClick={() => navigate("/app/quizzes")}
+            onClick={() => navigate(`/app/quizzes?course=${course.id}`)}
             className="w-full py-3 rounded-xl bg-primary text-primary-foreground font-semibold hover:opacity-90 transition-all"
           >
             Go to Quizzes

@@ -74,6 +74,7 @@ const TOPIC_CONFIG: Record<
 
 type QuizRow = {
   id: string;
+  course_id: string | null;
   title: string;
   topic: string;
   difficulty: "easy" | "medium" | "hard";
@@ -264,7 +265,7 @@ export async function fetchQuizzes(): Promise<Quiz[]> {
   const [quizzesRes, questionsRes, attemptsRes] = await Promise.all([
     supabase
       .from("quizzes")
-      .select("id, title, topic, difficulty, time_limit, description, is_published")
+      .select("id, title, topic, difficulty, time_limit, description, is_published,course_id")
       .eq("is_published", true)
       .order("created_at", { ascending: false }),
 
@@ -298,7 +299,9 @@ export async function fetchQuizzes(): Promise<Quiz[]> {
 
     return {
       id: q.id,
+      course_id: q.course_id,
       title: q.title,
+      
       topic: q.topic,
       difficulty: q.difficulty,
       questionCount: quizQuestions.length,
@@ -317,7 +320,7 @@ export async function fetchQuizById(id: string): Promise<Quiz | undefined> {
   const [quizRes, questionsRes, attemptsRes] = await Promise.all([
     supabase
       .from("quizzes")
-      .select("id, title, topic, difficulty, time_limit, description, is_published")
+      .select("id, title, topic, difficulty, time_limit, description, is_published, course_id")
       .eq("id", id)
       .eq("is_published", true)
       .maybeSingle(),
@@ -352,6 +355,7 @@ export async function fetchQuizById(id: string): Promise<Quiz | undefined> {
 
   return {
     id: q.id,
+    course_id: q.course_id,
     title: q.title,
     topic: q.topic,
     difficulty: q.difficulty,

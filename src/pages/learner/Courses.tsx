@@ -226,7 +226,7 @@ const Courses = () => {
 
                 <button
                   type="button"
-                  onClick={() => navigate(`/courses/${course.id}`)}
+                  onClick={() => navigate(`/app/courses/${course.id}`)}
                   className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 transition-all text-sm font-semibold"
                 >
                   View Course
